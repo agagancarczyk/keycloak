@@ -33,7 +33,10 @@ import { useParams } from "../../../utils/useParams";
 import useToggle from "../../../utils/useToggle";
 import { USERNAME_EMAIL } from "../../NewAttributeSettings";
 import { AttributeParams } from "../../routes/Attribute";
-import { AddTranslationsDialog } from "./AddTranslationsDialog";
+import {
+  AddTranslationsDialog,
+  TranslationsType,
+} from "./AddTranslationsDialog";
 
 import "../../realm-settings-section.css";
 
@@ -79,6 +82,7 @@ export const AttributeGeneralSettings = ({
   const [realm, setRealm] = useState<RealmRepresentation>();
   const [newAttributeName, setNewAttributeName] = useState("");
   const [generatedDisplayName, setGeneratedDisplayName] = useState("");
+  const [type, setType] = useState<TranslationsType>();
   const [translationsData, setTranslationsData] = useState<Translations>({
     key: "",
     translations: [],
@@ -186,6 +190,7 @@ export const AttributeGeneralSettings = ({
               : `profile.attributes.${newAttributeName}`
           }
           translations={translationsData}
+          type={type ?? "displayName"}
           onTranslationsAdded={handleTranslationsAdded}
           toggleDialog={handleToggleDialog}
           onCancel={() => {
@@ -259,6 +264,7 @@ export const AttributeGeneralSettings = ({
                   aria-label={t("addAttributeTranslationBtn")}
                   isDisabled={!newAttributeName && !editMode}
                   onClick={() => {
+                    setType("displayName");
                     toggleModal();
                   }}
                   icon={<GlobeRouteIcon />}

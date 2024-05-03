@@ -28,6 +28,11 @@ import { localeToDisplayName } from "../../../util";
 import { DEFAULT_LOCALE } from "../../../i18n/i18n";
 import { TextControl } from "@keycloak/keycloak-ui-shared";
 
+export type TranslationsType =
+  | "displayName"
+  | "displayHeader"
+  | "displayDescription";
+
 type TranslationForm = {
   locale: string;
   value: string;
@@ -41,6 +46,7 @@ type Translations = {
 export type AddTranslationsDialogProps = {
   translationKey: string;
   translations: Translations;
+  type: TranslationsType;
   onCancel: () => void;
   toggleDialog: () => void;
   onTranslationsAdded: (translations: Translations) => void;
@@ -49,6 +55,7 @@ export type AddTranslationsDialogProps = {
 export const AddTranslationsDialog = ({
   translationKey,
   translations,
+  type,
   onCancel,
   toggleDialog,
   onTranslationsAdded,
@@ -232,7 +239,9 @@ export const AddTranslationsDialog = ({
         <FlexItem>
           <TextContent>
             <Text component={TextVariants.p}>
-              {t("addTranslationsModalSubTitle")}{" "}
+              {type !== "displayHeader"
+                ? t("addTranslationsModalSubTitleDescription")
+                : t("addTranslationsModalSubTitle")}{" "}
               <strong>{t("addTranslationsModalSubTitleBolded")}</strong>
             </Text>
           </TextContent>
