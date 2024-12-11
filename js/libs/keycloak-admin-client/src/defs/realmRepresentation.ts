@@ -8,6 +8,7 @@ import type RolesRepresentation from "./rolesRepresentation.js";
 import type ClientProfilesRepresentation from "./clientProfilesRepresentation.js";
 import type ClientPoliciesRepresentation from "./clientPoliciesRepresentation.js";
 import type RoleRepresentation from "./roleRepresentation.js";
+import type AdminClientRepresentation from "./adminClientRepresentation.js";
 
 /**
  * https://www.keycloak.org/docs-api/11.0/rest-api/index.html#_realmrepresentation
@@ -24,6 +25,7 @@ export default interface RealmRepresentation {
   actionTokenGeneratedByUserLifespan?: number;
   adminEventsDetailsEnabled?: boolean;
   adminEventsEnabled?: boolean;
+  adminPermissionsClient?: AdminClientRepresentation;
   adminPermissionsEnabled?: boolean;
   adminTheme?: string;
   attributes?: Record<string, any>;
