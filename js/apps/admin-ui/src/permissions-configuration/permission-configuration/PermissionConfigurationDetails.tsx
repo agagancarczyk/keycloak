@@ -23,17 +23,14 @@ import {
   PermissionConfigurationDetailsParams,
   toPermissionConfigurationDetails,
 } from "../routes/PermissionConfigurationDetails";
-import { Users } from "./permission-type/Users";
 import { toPermissionsConfigurationTabs } from "../routes/PermissionsConfigurationTabs";
 import PolicyRepresentation from "@keycloak/keycloak-admin-client/lib/defs/policyRepresentation";
 import { useRealm } from "../../context/realm-context/RealmContext";
 import { NameDescription } from "./NameDescription";
-import { ResourceScope } from "./ResourceScope";
 import { AssignedPolicies } from "./AssignedPolicies";
 import { ScopePicker } from "../../clients/authorization/ScopePicker";
+import { Users } from "./permission-type/Users";
 import { sortBy } from "lodash-es";
-
-type Permission = {};
 
 const COMPONENTS: {
   [index: string]: () => JSX.Element;
@@ -52,14 +49,20 @@ export default function PermissionConfigurationDetails() {
   const form = useForm();
   const { reset, handleSubmit } = form;
   const { addAlert, addError } = useAlerts();
+  const [key, setKey] = useState(0);
+  const refresh = () => setKey((value) => value + 1);
   const [permission, setPermission] = useState<PolicyRepresentation>();
   const [providers, setProviders] = useState<PolicyProviderRepresentation[]>();
   const [policies, setPolicies] = useState<PolicyRepresentation[]>();
   const clientId = realmRepresentation?.adminPermissionsClient?.id!;
+  const [adminClientDetails, setAdminClientDetails] = useState<ResourceServerRepresentation>();
 
   useFetch(
     () =>
       Promise.all([
+        adminClient.clients.getResourceServer({
+          id: clientId!
+        }),
         adminClient.clients.listPolicyProviders({
           id: clientId!,
         }),
@@ -68,66 +71,53 @@ export default function PermissionConfigurationDetails() {
           permission: "false",
         }),
       ]),
-    ([providers, policies]) => {
+    ([adminClient, providers, policies]) => {
       const filteredProviders = providers.filter(
         (p) => p.type !== "resource" && p.type !== "scope"
       );
-      setProviders(sortBy(filteredProviders, (provider: PolicyProviderRepresentation) => provider.name));
+      setAdminClientDetails(adminClient);
+      setProviders(sortBy(filteredProviders, (provider: PolicyProviderRepresentation) => provider.name?.toLowerCase()));
       setPolicies(policies || []);
     },
-    [clientId]
+    [key, clientId]
   );
 
-  // useFetch(
-  //   async () => {
-  //     if (!permissionId) {
-  //       return {};
-  //     }
-  //     const [permission, resources, policies, scopes] = await Promise.all([
-  //       adminClient.clients.findOnePermission({
-  //         id,
-  //         type: resourceType,
-  //         permissionId,
-  //       }),
-  //       adminClient.clients.getAssociatedResources({
-  //         id,
-  //         permissionId,
-  //       }),
-  //       adminClient.clients.getAssociatedPolicies({
-  //         id,
-  //         permissionId,
-  //       }),
-  //       adminClient.clients.getAssociatedScopes({
-  //         id,
-  //         permissionId,
-  //       }),
-  //     ]);
+  const save = async (permission: PolicyRepresentation) => {
+    try {
+      const newPermission = {
+        ...permission,
+        policies: permission.policies?.map((policy: any) => policy.id),
+      };
 
-  //     if (!permission) {
-  //       throw new Error(t("notFound"));
-  //     }
-
-  //     return {
-  //       permission,
-  //       resources: resources.map((r) => r._id),
-  //       policies: policies.map((p) => p.id!),
-  //       scopes: scopes.map((s) => s.id!),
-  //     };
-  //   },
-  //   ({ permission, resources, policies, scopes }) => {
-  //     reset({ ...permission, resources, policies, scopes });
-  //     // if (permission && "resourceType" in permission) {
-  //     //   setApplyToResourceTypeFlag(
-  //     //     !!(permission as { resourceType: string }).resourceType,
-  //     //   );
-  //     // }
-  //     setPermission({ ...permission, resources, policies });
-  //   },
-  //   [],
-  // );
-
-  const onSubmit = async (permission: Permission) => {
-    //TODO creating a source-based permission
+      delete newPermission.users;
+  
+      if (permissionId) {
+        await adminClient.clients.updatePermission(
+          { id: clientId, type: "scope", permissionId },
+          newPermission
+        );
+      } else {
+        const result = await adminClient.clients.createPermission(
+          { id: clientId, type: "scope" },
+          newPermission
+        );
+        setPermission(result);
+        navigate(
+          toPermissionConfigurationDetails({
+            realm,
+            permissionId: result.id!,
+            resourceType,
+          })
+        );
+      }
+  
+      addAlert(
+        t(permissionId ? "updatePermissionSuccess" : "createPermissionSuccess"),
+        AlertVariant.success
+      );
+    } catch (error) {
+      addError("permissionSaveError", error);
+    }
   };
 
   const [toggleDeleteDialog, DeleteConfirm] = useConfirmDialog({
@@ -153,7 +143,7 @@ export default function PermissionConfigurationDetails() {
       }
     },
   });
-
+  
   if (permissionId && !permission) {
     return <KeycloakSpinner />;
   }
@@ -191,15 +181,19 @@ export default function PermissionConfigurationDetails() {
       <PageSection variant="light">
         <FormAccess
           isHorizontal
-          onSubmit={handleSubmit(onSubmit)}
+          onSubmit={handleSubmit(save)}
           role="anyone"
         >
           <FormProvider {...form}>
             <NameDescription />
-            <ResourceScope />
             <ScopePicker clientId={clientId} />
-            <AssignedPolicies permissionClientId={clientId} providers={providers!} policies={policies!}/>
             <ComponentType />
+            <AssignedPolicies
+              permissionClientId={clientId}
+              providers={providers!}
+              policies={policies!}
+              resourceType={resourceType}
+            />
           </FormProvider>
           <ActionGroup>
             <div className="pf-v5-u-mt-md">

@@ -1,4 +1,3 @@
-import ClientPolicyRepresentation from "@keycloak/keycloak-admin-client/lib/defs/clientPolicyRepresentation";
 import PolicyRepresentation, { DecisionStrategy, Logic } from "@keycloak/keycloak-admin-client/lib/defs/policyRepresentation";
 import PolicyProviderRepresentation from "@keycloak/keycloak-admin-client/lib/defs/policyProviderRepresentation";
 import { useTranslation } from "react-i18next";
@@ -12,19 +11,16 @@ import {
   Button,
   Form,
   ButtonVariant,
+  AlertVariant,
 } from "@patternfly/react-core";
-import { SelectControl, TextControl, useFetch } from "@keycloak/keycloak-ui-shared";
-import { useState } from "react";
-import { ResourceTypesRepresentation } from "@keycloak/keycloak-admin-client/lib/defs/resourceServerRepresentation";
-import { FormAccess } from "../../components/form/FormAccess";
+import { SelectControl, TextControl, useAlerts } from "@keycloak/keycloak-ui-shared";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useAdminClient } from "../../admin-client";
 import { useRealm } from "../../context/realm-context/RealmContext";
-import { sortBy } from "lodash-es";
 import { Client } from "../../clients/authorization/policy/Client";
 import { User } from "../../clients/authorization/policy/User";
-import { ClientScope } from "../../clients/authorization/policy/ClientScope";
-import { Group } from "../../clients/authorization/policy/Group";
+import { ClientScope, RequiredIdValue } from "../../clients/authorization/policy/ClientScope";
+import { Group, GroupValue } from "../../clients/authorization/policy/Group";
 import { Regex } from "../../clients/authorization/policy/Regex";
 import { Role } from "../../clients/authorization/policy/Role";
 import { Time } from "../../clients/authorization/policy/Time";
@@ -32,14 +28,18 @@ import { JavaScript } from "../../clients/authorization/policy/JavaScript";
 import { LogicSelector } from "../../clients/authorization/policy/LogicSelector";
 import { Aggregate } from "./permission-policy/Aggregate";
 
+type Policy = Omit<PolicyRepresentation, "roles"> & {
+  groups?: GroupValue[];
+  clientScopes?: RequiredIdValue[];
+  roles?: RequiredIdValue[];
+};
+
 type ComponentsProps = {
   isPermissionClient?: boolean;
   permissionClientId: string;
 };
 
-type FormFields = Partial<PolicyRepresentation>;
-
-const defaultValues: FormFields = {
+const defaultValues: Policy = {
   name: "",
   description: "",
   type: "Aggregated",
@@ -66,31 +66,31 @@ const COMPONENTS: {
 export const isValidComponentType = (value: string) => value in COMPONENTS;
 
 type NewPermissionConfigurationDialogProps = {
-  resourceTypes?: ResourceTypesRepresentation[];
-  toggleDialog: () => void;
-  onSelect: (resourceType: ResourceTypesRepresentation) => void;
   permissionClientId: string;
   providers: PolicyProviderRepresentation[];
   policies: PolicyRepresentation[];
+  resourceType: string;
+  toggleDialog: () => void;
+  // onSelect: (resourceType: ResourceTypesRepresentation) => void;
 };
 
 export const NewPolicyDialog = ({
-  toggleDialog,
-  onSelect,
   permissionClientId,
   providers,
-  policies
+  policies,
+  toggleDialog,
 }: NewPermissionConfigurationDialogProps) => {
   const { adminClient } = useAdminClient();
   const { realmRepresentation } = useRealm();
   const { t } = useTranslation();
-  const form = useForm<FormFields>({
+  const form = useForm<Policy>({
     mode: "onChange",
     defaultValues,
   });
+  const { addAlert, addError } = useAlerts();
   const { handleSubmit } = form;
-  const formValues = form.getValues();
   const isPermissionClient = realmRepresentation?.adminPermissionsEnabled;
+  const clientId = realmRepresentation?.adminPermissionsClient?.id!;
   
   const policyTypeSelector = useWatch({
     control: form.control,
@@ -105,9 +105,29 @@ export const NewPolicyDialog = ({
   }
 
   const ComponentType = getComponentType();
-  
-  const save = async () => {
-    console.log("Saving policy for a client");
+
+  const save = async (policy: Policy) => {
+    // remove entries that only have the boolean set and no id
+    policy.groups = policy.groups?.filter((g) => g.id);
+    policy.clientScopes = policy.clientScopes?.filter((c) => c.id);
+    policy.roles = policy.roles
+      ?.filter((r) => r.id)
+      .map((r) => ({ ...r, required: r.required || false }));
+    // policy.resourceType = resourceType;
+
+    try {
+      await adminClient.clients.createPolicy(
+        { id: clientId, type: policyTypeSelector!.toLocaleLowerCase() },
+        policy,
+      );
+      toggleDialog();
+      addAlert(
+        t("create" + "PolicySuccess"),
+        AlertVariant.success,
+      );
+    } catch (error) {
+      addError("policySaveError", error);
+    }
   };
 
   return (

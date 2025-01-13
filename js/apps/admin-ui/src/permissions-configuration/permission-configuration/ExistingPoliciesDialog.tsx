@@ -10,41 +10,61 @@ import {
   ModalVariant,
 } from "@patternfly/react-core";
 import { CaretDownIcon, FilterIcon } from "@patternfly/react-icons";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ListEmptyState } from "@keycloak/keycloak-ui-shared";
+import { ListEmptyState, useFetch } from "@keycloak/keycloak-ui-shared";
 import { KeycloakDataTable } from "@keycloak/keycloak-ui-shared";
-import { capitalize } from "lodash-es";
+import { useAdminClient } from "../../admin-client";
+import { capitalize, sortBy } from "lodash-es";
 import useToggle from "../../utils/useToggle";
 
 export type ExistingPoliciesDialogProps = {
-  policies: PolicyRepresentation[];
-  open: boolean;
   toggleDialog: () => void;
   onAssign: (policies: { policy: PolicyRepresentation }[]) => void;
+  open: boolean;
+  permissionClientId: string;
 };
 
 export const ExistingPoliciesDialog = ({
-  policies,
-  open,
   toggleDialog,
   onAssign,
+  open,
+  permissionClientId,
 }: ExistingPoliciesDialogProps) => {
   const { t } = useTranslation();
+  const { adminClient } = useAdminClient();
   const [rows, setRows] = useState<PolicyRepresentation[]>([]);
   const [filterType, setFilterType] = useState<string | undefined>(undefined);
   const [isFilterTypeDropdownOpen, toggleIsFilterTypeDropdownOpen] =
     useToggle();
+  const [policies, setPolicies] = useState<PolicyRepresentation[]>([]);
+  const [providers, setProviders] = useState<string[]>([]);
 
-  const policyTypes = useMemo(
-    () => Array.from(new Set(policies.map((policy) => policy.type))),
-    [policies]
+  useFetch(
+    () =>
+      Promise.all([
+        adminClient.clients.listPolicyProviders({
+          id: permissionClientId!,
+        }),
+        adminClient.clients.listPolicies({
+          id: permissionClientId!,
+          permission: "false",
+        }),
+      ]),
+    ([providers, policies]) => {
+      const formattedProviders = providers
+        .filter((p) => p.type !== "resource" && p.type !== "scope")
+        .map((provider) => provider.name)
+        .filter((name) => name !== undefined);
+      setProviders(sortBy(formattedProviders));
+      setPolicies(policies || []);
+    },
+    [permissionClientId]
   );
 
-  const filteredPolicies = useMemo(() => {
-    if (!filterType) return policies;
-    return policies.filter((policy) => policy.type === filterType);
-  }, [policies, filterType]);
+  const filteredPolicies = filterType
+    ? policies.filter((policy) => capitalize(policy.type) === filterType)
+    : policies;
 
   return (
     <Modal
@@ -86,7 +106,7 @@ export const ExistingPoliciesDialog = ({
       <KeycloakDataTable
         loader={filteredPolicies}
         ariaLabelKey={t("chooseAPolicyType")}
-        searchPlaceholderKey={t("searchPolicy")}
+        searchPlaceholderKey={t("searchClientAuthorizationPolicy")}
         isSearching={true}
         searchTypeComponent={
           <Dropdown
@@ -99,12 +119,12 @@ export const ExistingPoliciesDialog = ({
               <MenuToggle
                 ref={ref}
                 data-testid="filter-type-dropdown-existingPolicies"
-                id="toggle-id-9"
+                id="toggle-id-10"
                 onClick={toggleIsFilterTypeDropdownOpen}
                 icon={<FilterIcon />}
                 statusIcon={<CaretDownIcon />}
               >
-                {filterType ? capitalize(filterType) : t("allTypes")}
+                {filterType ? filterType : t("allTypes")}
               </MenuToggle>
             )}
             isOpen={isFilterTypeDropdownOpen}
@@ -117,13 +137,13 @@ export const ExistingPoliciesDialog = ({
               >
                 {t("allTypes")}
               </DropdownItem>
-              {policyTypes.map((type) => (
+              {providers.map((name) => (
                 <DropdownItem
-                  data-testid={`filter-type-dropdown-existingPolicies-${type}`}
-                  key={type}
-                  onClick={() => setFilterType(type)}
+                  data-testid={`filter-type-dropdown-existingPolicies-${name}`}
+                  key={name}
+                  onClick={() => setFilterType(name)}
                 >
-                  {capitalize(type)}
+                  {name}
                 </DropdownItem>
               ))}
             </DropdownList>

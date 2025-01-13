@@ -1,12 +1,13 @@
 import PolicyRepresentation from "@keycloak/keycloak-admin-client/lib/defs/policyRepresentation";
-import { ResourceTypesRepresentation } from "@keycloak/keycloak-admin-client/lib/defs/resourceServerRepresentation";
 import {
+  Action,
   FormErrorText,
   HelpItem,
+  KeycloakDataTable,
+  ListEmptyState,
   useFetch,
 } from "@keycloak/keycloak-ui-shared";
-import { Button, FormGroup } from "@patternfly/react-core";
-import { Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
+import { Button, Dropdown, DropdownItem, DropdownList, FormGroup, MenuToggle } from "@patternfly/react-core";
 import { useState } from "react";
 import { Controller, useFormContext } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -14,30 +15,27 @@ import { useAdminClient } from "../../admin-client";
 import { NewPolicyDialog } from "./NewPolicyDialog";
 import PolicyProviderRepresentation from "@keycloak/keycloak-admin-client/lib/defs/policyProviderRepresentation";
 import { ExistingPoliciesDialog } from "./ExistingPoliciesDialog";
-import ClientScopeRepresentation from "@keycloak/keycloak-admin-client/lib/defs/clientScopeRepresentation";
-import { ClientScopeType } from "../../components/client-scope/ClientScopeTypes";
+import { CaretDownIcon, FilterIcon } from "@patternfly/react-icons";
+import { capitalize, sortBy } from "lodash-es";
+import useToggle from "../../utils/useToggle";
+import { IRowData } from "@patternfly/react-table";
 
 type AssignedPoliciesProps = {
   permissionClientId: string;
   providers: PolicyProviderRepresentation[];
   policies: PolicyRepresentation[] | undefined;
+  resourceType: string;
 };
 
 type AssignedPolicyForm = {
-  assignedPolicies?: AssignedPolicyValue[];
-};
-
-export type AssignedPolicyValue = {
-  id: string;
-  name: string;
-  type: string;
-  description: string;
+  policies?: { id: string, type?: string }[];
 };
 
 export const AssignedPolicies = ({
   permissionClientId,
   providers,
   policies,
+  resourceType,
 }: AssignedPoliciesProps) => {
   const { adminClient } = useAdminClient();
   const { t } = useTranslation();
@@ -47,18 +45,25 @@ export const AssignedPolicies = ({
     setValue,
     formState: { errors },
   } = useFormContext<AssignedPolicyForm>();
-  const values = getValues("assignedPolicies");
+  const values = getValues("policies");
   const [existingPoliciesOpen, setExistingPoliciesOpen] = useState(false);
   const [newPolicyOpen, setNewPolicyOpen] = useState(false);
-  const [selectedPolicies, setSelectedPolicies] = useState<PolicyRepresentation[]>(
-    [],
-  );
+  const [selectedPolicies, setSelectedPolicies] = useState<PolicyRepresentation[]>([]);
+  const [filterType, setFilterType] = useState<string | undefined>(undefined);
+  const [isFilterTypeDropdownOpen, toggleIsFilterTypeDropdownOpen] =
+    useToggle();
 
   useFetch(
     () => {
       if (values && values.length > 0)
         return Promise.all(
-          values.map((p) => adminClient.clients.findOnePolicy({ id: permissionClientId, type: p.type, policyId: p.id })),
+          values.map((p) =>
+            adminClient.clients.findOnePolicy({
+              id: permissionClientId,
+              type: p.type!,
+              policyId: p.id,
+            }),
+          ),
         );
       return Promise.resolve([]);
     },
@@ -69,99 +74,173 @@ export const AssignedPolicies = ({
     [],
   );
 
+  const sortedProviders = sortBy(
+    providers
+      ? providers.filter((p) => p.type !== "resource" && p.type !== "scope").map((provider) => provider.name)
+      : []
+  );
+
+  const assign = (policies: { policy: PolicyRepresentation }[]) => {
+    const assignedPolicies = policies.map(({ policy }) => ({
+      id: policy.id!,
+    }));
+    setValue("policies", [...(values || []), ...assignedPolicies]);
+    setSelectedPolicies([...selectedPolicies, ...policies.map(({ policy }) => policy)]);
+  };
+
+  const unAssign = (policy: PolicyRepresentation) => {
+    const updatedPolicies = selectedPolicies.filter(
+      (selectedPolicy) => selectedPolicy.id !== policy.id
+    );
+    setSelectedPolicies(updatedPolicies);
+    setValue(
+      "policies",
+      updatedPolicies.map((policy) => ({
+        id: policy.id!,
+        name: policy.name!,
+        type: policy.type!,
+        description: policy.description!,
+      }))
+    );
+  };
+
+  const filteredPolicies = filterType
+  ? selectedPolicies.filter((policy) => capitalize(policy.type) === filterType)
+  : selectedPolicies;
+
   return (
-      <FormGroup
-        label={t("assignedPolicies")}
-        labelIcon={
-          <HelpItem helpText={t("permissionPoliciesHelp")} fieldLabelId="assignedPolicies" />
-        }
-        fieldId="assignedPolicies"
-        isRequired
-      >
-        <Controller
-          name="assignedPolicies"
-          control={control}
-          defaultValue={[]}
-          rules={{
-            validate: (value?: AssignedPolicyValue[]) =>
-              value && value.filter(({ id }) => id).length > 0,
-          }}
-          render={({ field }) => (
-            <>
-              {existingPoliciesOpen && (
-                <ExistingPoliciesDialog
-                  policies={policies!}
-                  open={existingPoliciesOpen}
-                  toggleDialog={() => setExistingPoliciesOpen(!existingPoliciesOpen)}
-                  onAssign={() => {}}
-                />
-              )}
-              {newPolicyOpen && (
-                <NewPolicyDialog 
-                  toggleDialog={()=> setNewPolicyOpen(!newPolicyOpen)} 
-                  permissionClientId={permissionClientId}
-                  providers={providers!}
-                  policies={policies!}
-                  onSelect={()=> console.log("onSelect")} 
-                />
-              )}
-              <Button
-                data-testid="select-assignedPolicy-button"
-                variant="secondary"
-                onClick={() => {
-                  setExistingPoliciesOpen(true);
-                }}
-              >
-                {t("assignExistingPolicies")}
-              </Button>
-              <Button
-                data-testid="select-createNewPolicy-button"
-                className="pf-v5-u-ml-md"
-                variant="secondary"
-                onClick={() => {
-                  setNewPolicyOpen(true);
-                }}
-              >
-                {t("createNewPolicy")}
-              </Button>
-            </>
-          )}
-        />
-        {selectedPolicies.length > 0 && (
-          <Table variant="compact">
-            <Thead>
-              <Tr>
-                <Th>{t("name")}</Th>
-                <Th>{t("type")}</Th>
-                <Th>{t("description")}</Th>
-                <Th aria-hidden="true" />
-              </Tr>
-            </Thead>
-            <Tbody>
-              {selectedPolicies.map((policy, index) => (
-                <Tr key={policy.id}>
-                  <Td>{policy.name}</Td>
-                  <Td>{policy.type}</Td>
-                  <Td>{policy.description}</Td>
-                  <Td>
-                    <Button
-                      variant="link"
-                      onClick={() => {
-                        setValue("assignedPolicies", [
-                          ...(values || []).filter(({ id }) => id !== policy.id),
-                        ]);
-                        setSelectedPolicies([
-                          ...selectedPolicies.filter(({ id }) => id !== policy.id),
-                        ]);
-                      }}
-                    />
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
+    <FormGroup
+      label={t("assignedPolicies")}
+      labelIcon={
+        <HelpItem helpText={t("permissionPoliciesHelp")} fieldLabelId="assignedPolicies" />
+      }
+      fieldId="assignedPolicies"
+      isRequired
+    >
+      <Controller
+        name="policies"
+        control={control}
+        defaultValue={[]}
+        rules={{
+          validate: (value?: { id: string }[]) => {
+            if (!value || value.length === 0) return false;
+            return value.every(({ id }) => id && id.trim().length > 0);
+          },
+        }}
+        render={({ field }) => (
+          <>
+            {existingPoliciesOpen && (
+              <ExistingPoliciesDialog
+                permissionClientId={permissionClientId}
+                open={existingPoliciesOpen}
+                toggleDialog={() => setExistingPoliciesOpen(!existingPoliciesOpen)}
+                onAssign={assign}
+              />
+            )}
+            {newPolicyOpen && (
+              <NewPolicyDialog
+                toggleDialog={() => setNewPolicyOpen(!newPolicyOpen)}
+                permissionClientId={permissionClientId}
+                providers={providers!}
+                policies={policies!}
+                resourceType={resourceType}
+              />
+            )}
+            <Button
+              data-testid="select-assignedPolicy-button"
+              variant="secondary"
+              onClick={() => {
+                setExistingPoliciesOpen(true);
+              }}
+            >
+              {t("assignExistingPolicies")}
+            </Button>
+            <Button
+              data-testid="select-createNewPolicy-button"
+              className="pf-v5-u-ml-md"
+              variant="secondary"
+              onClick={() => {
+                setNewPolicyOpen(true);
+              }}
+            >
+              {t("createNewPolicy")}
+            </Button>
+          </>
         )}
-        {errors.assignedPolicies && <FormErrorText message={t("requiredAssignedPolicies")} />}
-      </FormGroup>
+      />
+      {selectedPolicies.length > 0 && (
+        <KeycloakDataTable
+        loader={filteredPolicies}
+        ariaLabelKey={t("policies")}
+        searchPlaceholderKey={t("searchClientAuthorizationPolicy")}
+        isSearching={true}
+        searchTypeComponent={
+          <Dropdown
+            onSelect={(event, value) => {
+              setFilterType(value as string | undefined);
+              toggleIsFilterTypeDropdownOpen();
+            }}
+            onOpenChange={toggleIsFilterTypeDropdownOpen}
+            toggle={(ref) => (
+              <MenuToggle
+                ref={ref}
+                data-testid="filter-type-dropdown-existingPolicies"
+                id="toggle-id-10"
+                onClick={toggleIsFilterTypeDropdownOpen}
+                icon={<FilterIcon />}
+                statusIcon={<CaretDownIcon />}
+              >
+                {filterType ? capitalize(filterType) : t("allTypes")}
+              </MenuToggle>
+            )}
+            isOpen={isFilterTypeDropdownOpen}
+          >
+            <DropdownList>
+              <DropdownItem
+                data-testid="filter-type-dropdown-existingPolicies-all"
+                key="all"
+                onClick={() => setFilterType(undefined)}
+              >
+                {t("allTypes")}
+              </DropdownItem>
+              {sortedProviders.map((name) => (
+                <DropdownItem
+                  data-testid={`filter-type-dropdown-existingPolicies-${name}`}
+                  key={name}
+                  onClick={() => setFilterType(name)}
+                >
+                  {name}
+                </DropdownItem>
+              ))}
+            </DropdownList>
+          </Dropdown>
+        }
+        actionResolver={(rowData: IRowData) => [
+          {
+            title: t("unAssignPolicy"),
+            onClick: () => unAssign(rowData.data as PolicyRepresentation),
+          } as Action<PolicyRepresentation>,
+        ]}
+        columns={[
+          { name: "name", displayKey: t("name") },
+          {
+            name: "type",
+            displayKey: t("type"),
+            cellFormatters: [
+              (value) => capitalize(String(value || "")),
+            ],
+          },
+          { name: "description", displayKey: t("description") },
+        ]}
+        emptyState={
+          <ListEmptyState
+            message={t("emptyAssignExistingPolicies")}
+            instructions={t("emptyAssignExistingPoliciesInstructions")}
+          />
+        }
+      />
+      )}
+      {errors.policies && <FormErrorText message={t("requiredAssignedPolicies")} />}
+    </FormGroup>
   );
 };

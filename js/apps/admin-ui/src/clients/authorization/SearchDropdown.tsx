@@ -76,7 +76,7 @@ export const SearchDropdown = ({
         >
           {type === "resource" && t("searchClientAuthorizationResource")}
           {type === "policy" && t("searchClientAuthorizationPolicy")}
-          {(type === "permission" || "adminPermission") && t("searchClientAuthorizationPermission")}
+          {(type === "permission" || type === "adminPermission") && t("searchClientAuthorizationPermission")}
         </MenuToggle>
       )}
       isOpen={open}
@@ -156,7 +156,7 @@ export const SearchDropdown = ({
               }}
               options={[
                 ...(policies || []).map(({ type, name }) => ({
-                  key: type!,
+                  key: name!,
                   value: name!,
                 })),
               ]}              
