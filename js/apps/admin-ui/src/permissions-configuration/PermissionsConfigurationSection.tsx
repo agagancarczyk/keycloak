@@ -18,7 +18,6 @@ import {
   TabTitleText,
 } from "@patternfly/react-core";
 import { AuthorizationPolicies } from "../clients/authorization/Policies";
-import { AuthorizationEvaluate } from "../clients/authorization/AuthorizationEvaluate";
 import { PermissionsConfigurationTab } from "./PermissionsConfigurationTab";
 import { useRealm } from "../context/realm-context/RealmContext";
 import { useAccess } from "../context/access/Access";
@@ -33,6 +32,7 @@ import {
 import { ConfirmDialogModal } from "../components/confirm-dialog/ConfirmDialog";
 import { KeyValueType } from "../components/key-value-form/key-value-convert";
 import useToggle from "../utils/useToggle";
+import { PermissionsEvaluationTab } from "./PermissionsEvaluationTab";
 
 export default function PermissionsConfigurationSection() {
   const { adminClient } = useAdminClient();
@@ -65,7 +65,7 @@ export default function PermissionsConfigurationSection() {
   const permissionsResourcesTab =
     usePermissionsConfigurationTabs("permissions");
   const permissionsPoliciesTab = usePermissionsConfigurationTabs("policies");
-  const permissionsEvaluateTab = usePermissionsConfigurationTabs("evaluate");
+  const permissionsEvaluateTab = usePermissionsConfigurationTabs("evaluation");
 
   useFetch(
     async () => {
@@ -211,7 +211,7 @@ export default function PermissionsConfigurationSection() {
                   title={<TabTitleText>{t("evaluate")}</TabTitleText>}
                   {...permissionsEvaluateTab}
                 >
-                  <AuthorizationEvaluate
+                  <PermissionsEvaluationTab
                     client={adminPermissionsClient}
                     save={save}
                   />
