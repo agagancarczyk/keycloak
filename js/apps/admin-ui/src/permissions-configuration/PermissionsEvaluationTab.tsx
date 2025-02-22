@@ -2,9 +2,11 @@ import type ClientRepresentation from "@keycloak/keycloak-admin-client/lib/defs/
 import type EvaluationResultRepresentation from "@keycloak/keycloak-admin-client/lib/defs/evaluationResultRepresentation";
 import type ResourceEvaluation from "@keycloak/keycloak-admin-client/lib/defs/resourceEvaluation";
 import type ResourceRepresentation from "@keycloak/keycloak-admin-client/lib/defs/resourceRepresentation";
+import PolicyEvaluationResponse from "@keycloak/keycloak-admin-client/lib/defs/policyEvaluationResponse";
 import {
   ListEmptyState,
   SelectControl,
+  useAlerts,
   useFetch,
 } from "@keycloak/keycloak-ui-shared";
 import {
@@ -26,12 +28,12 @@ import { useTranslation } from "react-i18next";
 import { useAdminClient } from "../admin-client";
 import { UserSelect } from "../components/users/UserSelect";
 import { FormAccess } from "../components/form/FormAccess";
-import { KeyValueType } from "../components/key-value-form/key-value-convert";
 import { useAccess } from "../context/access/Access";
 import { ForbiddenSection } from "../ForbiddenSection";
-import { FormFields } from "../clients/ClientDetails";
 import { BellIcon } from "@patternfly/react-icons";
 import { sortBy } from "lodash-es";
+import { ClientSelect } from "../components/client/ClientSelect";
+import { useRealm } from "../context/realm-context/RealmContext";
 
 interface EvaluateFormInputs
   extends Omit<ResourceEvaluation, "context" | "resources"> {
@@ -41,36 +43,21 @@ interface EvaluateFormInputs
     attributes: Record<string, string>[];
   };
   resources?: Record<string, string>[];
-  client: FormFields;
+  client: Record<string, unknown>;
   user: string[];
   resourceType?: string;
+  authScope: string[];
 }
 
-export type AttributeType = {
-  key: string;
-  name: string;
-  custom?: boolean;
-  values?: {
-    [key: string]: string;
-  }[];
-};
-
-type ClientSettingsProps = {
+type Props = {
   client: ClientRepresentation;
   save: () => void;
-};
+} & EvaluationResultRepresentation;
 
-export type AttributeForm = Omit<
-  EvaluateFormInputs,
-  "context" | "resources"
-> & {
-  context: {
-    attributes?: KeyValueType[];
-  };
-  resources?: KeyValueType[];
+const COMPONENTS: Record<string, React.ElementType> = {
+  users: UserSelect,
+  clients: ClientSelect,
 };
-
-type Props = ClientSettingsProps & EvaluationResultRepresentation;
 
 export const PermissionsEvaluationTab = (props: Props) => {
   const { hasAccess } = useAccess();
@@ -83,32 +70,36 @@ export const PermissionsEvaluationTab = (props: Props) => {
 };
 
 const AuthorizationEvaluateContent = ({ client }: Props) => {
-  const { adminClient } = useAdminClient();
-
-  const form = useForm<EvaluateFormInputs>({ mode: "onChange" });
-  const {
-    reset,
-    formState: { isValid },
-  } = form;
   const { t } = useTranslation();
+  const { adminClient } = useAdminClient();
+  const realm = useRealm();
+  const { addError } = useAlerts();
+  const form = useForm<EvaluateFormInputs>({
+    mode: "onChange",
+    defaultValues: {
+      user: [],
+      resourceType: "",
+      authScope: [],
+    },
+  });
+  const { control, getValues, reset, trigger } = form;
   const [resources, setResources] = useState<ResourceRepresentation[]>([]);
+  const [evaluateResult, setEvaluateResult] =
+    useState<PolicyEvaluationResponse>();
   const [isAlertClosed, setIsAlertClosed] = useState(true);
 
   const selectedResourceType = useWatch({
-    control: form.control,
+    control: control,
     name: "resourceType",
+    defaultValue: "",
   });
 
   useFetch(
     () =>
-      Promise.all([
-        adminClient.clients.listResources({
-          id: client.id!,
-        }),
-      ]),
-    ([resources]) => {
-      setResources(resources);
-    },
+      adminClient.clients.listResources({
+        id: client.id!,
+      }),
+    (resources) => setResources(resources),
     [],
   );
 
@@ -116,6 +107,34 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
     const resource = resources.find((r) => r.name === selectedResourceType);
     return sortBy(resource?.scopes?.map((scope) => scope.name!) || []);
   }, [selectedResourceType, resources]);
+
+  const ResourceTypeComponent =
+    COMPONENTS[selectedResourceType?.toLowerCase() || ""];
+
+  const evaluate = async () => {
+    if (!(await trigger())) {
+      return;
+    }
+    const formValues = getValues();
+    const resEval: ResourceEvaluation = {
+      clientId: "",
+      userId: "",
+      entitlements: false,
+      context: {
+        attributes: {},
+      },
+    };
+    try {
+      const evaluation = await adminClient.clients.evaluateResource(
+        { id: client.id!, realm: realm.realm },
+        resEval,
+      );
+
+      setEvaluateResult(evaluation);
+    } catch (error) {
+      addError("evaluateError", error);
+    }
+  };
 
   return (
     <PageSection>
@@ -152,20 +171,26 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
                     labelIcon={t("resourceTypeSelectHelp")}
                     variant="single"
                     controller={{
-                      defaultValue: "",
-                      rules: {
-                        required: true,
-                      },
+                      defaultValue: resources.length ? resources[0]?.name : "",
+                      rules: { required: true },
                     }}
                     options={resources.map((resource) => resource.name!)}
                   />
+                  {ResourceTypeComponent && (
+                    <ResourceTypeComponent
+                      name={selectedResourceType?.toLowerCase()}
+                      label={t(`${selectedResourceType}Select`)}
+                      helpText={t(`select${selectedResourceType}`)}
+                      defaultValue={[]}
+                      variant="typeahead"
+                      isRequired
+                    />
+                  )}
                   <SelectControl
                     name="authScope"
                     label={t("authScope")}
                     labelIcon={t("authScopeSelectHelp")}
-                    controller={{
-                      defaultValue: [],
-                    }}
+                    controller={{ defaultValue: [] }}
                     variant="single"
                     options={authScopes}
                   />
@@ -177,7 +202,8 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
                 data-testid="authorization-eval"
                 id="authorization-eval"
                 className="pf-v5-u-mr-md"
-                isDisabled={!isValid}
+                isDisabled={!form.formState.isValid}
+                onClick={() => evaluate()}
               >
                 {t("evaluate")}
               </Button>
