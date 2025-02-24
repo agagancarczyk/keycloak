@@ -27,26 +27,25 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useAdminClient } from "../admin-client";
 import { UserSelect } from "../components/users/UserSelect";
+import { ClientSelect } from "../components/client/ClientSelect";
 import { FormAccess } from "../components/form/FormAccess";
 import { useAccess } from "../context/access/Access";
 import { ForbiddenSection } from "../ForbiddenSection";
 import { BellIcon } from "@patternfly/react-icons";
 import { sortBy } from "lodash-es";
-import { ClientSelect } from "../components/client/ClientSelect";
 import { useRealm } from "../context/realm-context/RealmContext";
 
 interface EvaluateFormInputs
   extends Omit<ResourceEvaluation, "context" | "resources"> {
-  alias: string;
   authScopes: string[];
   context: {
-    attributes: Record<string, string>[];
+    scopes: string[];
   };
   resources?: Record<string, string>[];
-  client: Record<string, unknown>;
+  clients: string[];
+  users: string[];
   user: string[];
   resourceType?: string;
-  authScope: string[];
 }
 
 type Props = {
@@ -79,14 +78,15 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
     defaultValues: {
       user: [],
       resourceType: "",
-      authScope: [],
+      authScopes: [],
     },
   });
   const { control, getValues, reset, trigger } = form;
   const [resources, setResources] = useState<ResourceRepresentation[]>([]);
   const [evaluateResult, setEvaluateResult] =
     useState<PolicyEvaluationResponse>();
-  const [isAlertClosed, setIsAlertClosed] = useState(true);
+  const [isAlertOpened, setIsAlertOpened] = useState(true);
+  const [isEvaluated, setIsEvaluated] = useState(false);
 
   const selectedResourceType = useWatch({
     control: control,
@@ -115,15 +115,17 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
     if (!(await trigger())) {
       return;
     }
+
     const formValues = getValues();
     const resEval: ResourceEvaluation = {
-      clientId: "",
-      userId: "",
+      roleIds: formValues.roleIds ?? [],
+      userId: formValues.user![0],
       entitlements: false,
       context: {
         attributes: {},
       },
     };
+
     try {
       const evaluation = await adminClient.clients.evaluateResource(
         { id: client.id!, realm: realm.realm },
@@ -131,6 +133,7 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
       );
 
       setEvaluateResult(evaluation);
+      setIsEvaluated(true);
     } catch (error) {
       addError("evaluateError", error);
     }
@@ -142,9 +145,9 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
         <SplitItem>
           <FormProvider {...form}>
             <Panel>
-              <PanelMainBody>
+              <PanelMainBody style={{ width: "50rem" }}>
                 <FormAccess isHorizontal role="view-clients">
-                  {isAlertClosed && (
+                  {isAlertOpened && (
                     <Alert
                       variant="info"
                       isInline
@@ -152,7 +155,7 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
                       component="p"
                       actionClose={
                         <AlertActionCloseButton
-                          onClose={() => setIsAlertClosed(false)}
+                          onClose={() => setIsAlertOpened(false)}
                         />
                       }
                     />
@@ -179,7 +182,7 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
                   {ResourceTypeComponent && (
                     <ResourceTypeComponent
                       name={selectedResourceType?.toLowerCase()}
-                      label={t(`${selectedResourceType}Select`)}
+                      label={t(`${selectedResourceType}`)}
                       helpText={t(`select${selectedResourceType}`)}
                       defaultValue={[]}
                       variant="typeahead"
@@ -187,7 +190,7 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
                     />
                   )}
                   <SelectControl
-                    name="authScope"
+                    name="authScopes"
                     label={t("authScope")}
                     labelIcon={t("authScopeSelectHelp")}
                     controller={{ defaultValue: [] }}
@@ -212,7 +215,11 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
                 id="authorization-revert"
                 className="pf-v5-u-mr-md"
                 variant="link"
-                onClick={() => reset()}
+                onClick={() => {
+                  reset();
+                  setEvaluateResult({});
+                  setIsEvaluated(false);
+                }}
               >
                 {t("revert")}
               </Button>
@@ -227,11 +234,32 @@ const AuthorizationEvaluateContent = ({ client }: Props) => {
               </Title>
             </PanelHeader>
             <PanelMainBody>
-              <ListEmptyState
-                icon={BellIcon}
-                message={t("noPermissionsEvaluationResults")}
-                instructions={t("noPermissionsEvaluationResultsInstructions")}
-              />
+              {!isEvaluated ? (
+                <ListEmptyState
+                  icon={BellIcon}
+                  message={t("noPermissionsEvaluationResults")}
+                  instructions={t("noPermissionsEvaluationResultsInstructions")}
+                />
+              ) : !evaluateResult ||
+                Object.keys(evaluateResult).length === 0 ? (
+                <Alert
+                  isInline
+                  variant="warning"
+                  title="Warning"
+                  component="h6"
+                >
+                  <p>No evaluation results found.</p>
+                </Alert>
+              ) : (
+                <Alert
+                  isInline
+                  variant="success"
+                  title="Success"
+                  component="h6"
+                >
+                  <p>Evaluation completed successfully.</p>
+                </Alert>
+              )}
             </PanelMainBody>
           </Panel>
         </SplitItem>

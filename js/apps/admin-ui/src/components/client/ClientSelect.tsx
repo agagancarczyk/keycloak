@@ -12,6 +12,7 @@ import type { ComponentProps } from "../dynamic/components";
 
 type ClientSelectProps = Omit<ComponentProps, "convertToName"> & {
   variant?: `${SelectVariant}`;
+  isRequired?: boolean;
 };
 
 export const ClientSelect = ({
@@ -20,11 +21,10 @@ export const ClientSelect = ({
   helpText,
   defaultValue,
   isDisabled = false,
-  required = false,
+  isRequired,
   variant = "typeahead",
 }: ClientSelectProps) => {
   const { adminClient } = useAdminClient();
-
   const { t } = useTranslation();
 
   const [clients, setClients] = useState<ClientRepresentation[]>([]);
@@ -32,9 +32,7 @@ export const ClientSelect = ({
 
   useFetch(
     () => {
-      const params: ClientQuery = {
-        max: 20,
-      };
+      const params: ClientQuery = { max: 20 };
       if (search) {
         params.clientId = search;
         params.search = true;
@@ -54,7 +52,7 @@ export const ClientSelect = ({
         defaultValue: defaultValue || "",
         rules: {
           required: {
-            value: required,
+            value: isRequired || false,
             message: t("required"),
           },
         },
