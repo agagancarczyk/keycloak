@@ -1,7 +1,8 @@
 import { lazy } from "react";
-import type { Path } from "react-router-dom";
+import { type Path } from "react-router-dom";
 import { generateEncodedPath } from "../../utils/generateEncodedPath";
 import type { AppRouteObject } from "../../routes";
+import { PermissionPolicyBreadcrumb } from "./PermissionPolicyBreadcrumb";
 
 export type NewPermissionPolicyDetailsParams = {
   realm: string;
@@ -16,7 +17,9 @@ const NewPermissionPolicyDetails = lazy(
 export const NewPermissionPolicyRoute: AppRouteObject = {
   path: "/:realm/permissions/:permissionClientId/policy/new/:policyType",
   element: <NewPermissionPolicyDetails />,
-  breadcrumb: (t) => t("createPermissionPolicy"),
+  breadcrumb: (t) => () => (
+    <PermissionPolicyBreadcrumb detailLabel={t("policyDetails")} />
+  ),
   handle: {
     access: (accessChecker) =>
       accessChecker.hasAny("manage-clients", "manage-authorization"),
